@@ -48,9 +48,13 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-v2-${{ hashFiles('**/*.gradle*') }}
+          # Bumped key version (v3) to invalidate a stale cache that was
+          # returning a desugar-task transform whose backing directory had
+          # been pruned, causing mergeExtDexDebug to fail with "input file
+          # was expected to be present but it doesn't exist".
+          key: ${{ runner.os }}-gradle-v3-${{ hashFiles('**/*.gradle*') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-
+            ${{ runner.os }}-gradle-v3-
       - name: Create local.properties
         run: |
           echo "signing.storeFile=signing/signing-key.jks" >> local.properties
