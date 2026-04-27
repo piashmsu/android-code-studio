@@ -63,8 +63,8 @@ class DeepSeek : AIAgent {
               }
               
               override fun getApiKey(): String? {
-                  val prefManager = com.tom.rv2ide.preferences.internal.prefManager
-                  return prefManager.getString("ai_agent_deepseek_api_key", "")?.takeIf { it.isNotBlank() }
+                  return com.tom.rv2ide.artificial.secrets.ApiKey
+                      .getDeepseekApiKey().takeIf { it.isNotBlank() }
               }
           })
       }

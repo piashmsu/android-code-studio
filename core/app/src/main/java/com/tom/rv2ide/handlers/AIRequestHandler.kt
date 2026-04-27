@@ -50,6 +50,10 @@ class AIRequestHandler(
                     summaryCard.visibility = View.GONE
                     fileModificationAdapter.clear()
                     fileModificationList.visibility = View.GONE
+                    // Clear any leftover code-block cards from a previous reply.
+                    statusText.rootView.findViewById<LinearLayout>(
+                        com.tom.rv2ide.R.id.replySegments
+                    )?.let { it.removeAllViews(); it.visibility = View.GONE }
                 }
 
                 SessionLog.add(SessionLog.Entry("user", userRequest))
@@ -227,7 +231,24 @@ class AIRequestHandler(
         progressIndicator.visibility = View.GONE
         executeBtn.isEnabled = true
         SessionLog.add(SessionLog.Entry("assistant", response, model = UsageTracker.last?.model))
-        statusText.text = MarkdownRenderer.render(response)
+
+        // If the reply contains fenced code blocks, render each block as its
+        // own card with a Copy button so the user can grab snippets without
+        // having to long-press-select. Otherwise fall back to the single
+        // selectable status text.
+        val segmentsContainer = statusText.rootView.findViewById<LinearLayout>(
+            com.tom.rv2ide.R.id.replySegments
+        )
+        val showRich = segmentsContainer != null &&
+            com.tom.rv2ide.artificial.text.RichReplyRenderer.render(segmentsContainer, response)
+        if (showRich) {
+            statusText.text = "✅ Response received  •  ${response.length} chars"
+            segmentsContainer?.visibility = View.VISIBLE
+        } else {
+            segmentsContainer?.visibility = View.GONE
+            segmentsContainer?.removeAllViews()
+            statusText.text = MarkdownRenderer.render(response)
+        }
         statusText.setOnLongClickListener {
             val ctx = statusText.context
             val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -235,7 +256,28 @@ class AIRequestHandler(
             Toast.makeText(ctx, "Copied AI response", Toast.LENGTH_SHORT).show()
             true
         }
-        summaryCard.visibility = View.GONE
+
+        // Show usage chip below if the provider reported tokens — useful for
+        // gauging cost on text-only replies (Q&A, code review, explain).
+        val usage = UsageTracker.last
+        if (usage != null) {
+            summaryCard.visibility = View.VISIBLE
+            val cost = com.tom.rv2ide.artificial.usage.CostEstimator
+                .costFor(usage.promptTokens, usage.completionTokens, usage.model)
+            summaryText.text = buildString {
+                append("🔢 Tokens: ${usage.promptTokens} in / ${usage.completionTokens} out")
+                append("  •  this request: ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(cost)}")
+                try {
+                    val ctx = statusText.context.applicationContext
+                    val today = com.tom.rv2ide.artificial.usage.DailyCostGuard.spentTodayUsd(ctx)
+                    val limit = com.tom.rv2ide.artificial.usage.DailyCostGuard.limitUsd(ctx)
+                    append("\n💰 Today: ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(today)}")
+                    if (limit > 0.0) append(" of ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(limit)}")
+                } catch (_: Throwable) { }
+            }
+        } else {
+            summaryCard.visibility = View.GONE
+        }
         fileModificationList.visibility = View.GONE
     }
     
@@ -263,8 +305,24 @@ Please check the error message and try again.
         builder.append("✏️ Modified Files: ${summary.modifiedFiles}\n")
 
         UsageTracker.last?.let { usage ->
+            val cost = com.tom.rv2ide.artificial.usage.CostEstimator
+                .costFor(usage.promptTokens, usage.completionTokens, usage.model)
+            val costStr = com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(cost)
             builder.append("🔢 Tokens: ${usage.promptTokens} in / ${usage.completionTokens} out")
+                .append("  •  this request: $costStr")
                 .append("  •  session total: ${UsageTracker.totalTokens()}\n")
+            // Show today's running spend so the user is never surprised by
+            // their bill at end of month.
+            try {
+                val ctx = statusText.context.applicationContext
+                val today = com.tom.rv2ide.artificial.usage.DailyCostGuard.spentTodayUsd(ctx)
+                val limit = com.tom.rv2ide.artificial.usage.DailyCostGuard.limitUsd(ctx)
+                builder.append("💰 Today: ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(today)}")
+                if (limit > 0.0) {
+                    builder.append(" of ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(limit)}")
+                }
+                builder.append('\n')
+            } catch (_: Throwable) { }
         }
         builder.append('\n')
         

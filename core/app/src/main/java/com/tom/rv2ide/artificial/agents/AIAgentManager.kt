@@ -204,6 +204,21 @@ class AIAgentManager(private val context: Context) {
         var providerSwitched = false
         var lastError: Throwable? = null
 
+        // Pre-flight: refuse to spend if the user has set a daily cap and
+        // already hit it. Cap is opt-in (default 0 = unlimited).
+        try {
+            val block = com.tom.rv2ide.artificial.usage.DailyCostGuard
+                .preflightBlockReason(context)
+            if (block != null) {
+                callback.onError(
+                    "💰 DAILY COST CAP REACHED\n\n$block\n\n" +
+                    "Tip: free models (slug ending in `:free`) and local Ollama / vLLM " +
+                    "endpoints don't count against this cap."
+                )
+                return
+            }
+        } catch (_: Throwable) { /* not fatal */ }
+
         currentAgent?.resetAttemptCount()
         callback.onProcessing("Analyzing your request...")
 

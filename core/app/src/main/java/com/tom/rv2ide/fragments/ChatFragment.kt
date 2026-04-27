@@ -210,7 +210,11 @@ class ChatFragment(
         }
 
         requireView().findViewById<MaterialButton>(R.id.imageAttachBtn)?.setOnClickListener {
-            launchImagePicker()
+            offerImageSourceChoice()
+        }
+
+        requireView().findViewById<MaterialButton>(R.id.debugCrashBtn)?.setOnClickListener {
+            launchCrashDebug()
         }
 
         wireTemplates()
@@ -218,15 +222,72 @@ class ChatFragment(
     }
 
     /**
-     * Launch a system image picker. The chosen image is downscaled, JPEG-encoded
-     * to base64, and stored on [com.tom.rv2ide.artificial.multimodal.ImageAttachment]
-     * so the next request goes out as a multimodal user message. We show a small
-     * chip near the prompt so the user knows an image is attached.
+     * Tap the bug button → ask the AI to root-cause the most recent crash.
+     * Reads the persisted crash dump (and a tail of process-local logcat
+     * when readable) and stuffs both into a structured prompt the agent can
+     * act on. If there's nothing to debug we tell the user instead of
+     * spending tokens on a useless request.
      */
-    private fun launchImagePicker() {
+    private fun launchCrashDebug() {
+        val ctx = context ?: return
+        val report = com.tom.rv2ide.artificial.debug.CrashDebugger.gather(ctx)
+        if (report.crashTrace.isBlank() && report.logcatTail.isBlank()) {
+            showSnackbar("No recent crash dump or logcat entries to debug.")
+            return
+        }
+        val prompt = com.tom.rv2ide.artificial.debug.CrashDebugger.buildPrompt(report)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle("Debug last crash with AI?")
+            .setMessage(
+                "Source: ${report.source}\n\n" +
+                "Trace size: ${report.crashTrace.length} chars\n" +
+                "Logcat tail: ${report.logcatTail.length} chars\n\n" +
+                "The AI will analyse the crash and propose a fix. " +
+                "This counts against your daily AI cost cap (if set)."
+            )
+            .setPositiveButton("Send") { _, _ ->
+                promptInput.setText(prompt)
+                promptInput.setSelection(prompt.length.coerceAtMost(0))
+                executeBtn.performClick()
+                com.tom.rv2ide.artificial.debug.CrashDebugger.clearCrash(ctx)
+            }
+            .setNeutralButton("Copy prompt") { _, _ ->
+                val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Crash prompt", prompt))
+                showSnackbar("Crash prompt copied")
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Ask the user whether to attach from gallery or take a fresh photo. The
+     * resulting image (or images, gallery supports multi-pick on Android 13+)
+     * is downscaled, JPEG-compressed and base64-encoded, then queued on
+     * [com.tom.rv2ide.artificial.multimodal.ImageAttachment]. The chip strip
+     * below the prompt updates live with thumbnails.
+     */
+    private fun offerImageSourceChoice() {
+        if (com.tom.rv2ide.artificial.multimodal.ImageAttachment.isFull()) {
+            showSnackbar("Maximum images attached. Remove one first.")
+            return
+        }
+        val ctx = context ?: return
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle("Attach image")
+            .setItems(arrayOf("Pick from gallery (multi-select)", "Take a photo")) { _, which ->
+                if (which == 0) launchGalleryPicker() else launchCameraCapture()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun launchGalleryPicker() {
         val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
             type = "image/*"
             addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
         try {
             imagePickerLauncher.launch(intent)
@@ -235,47 +296,197 @@ class ChatFragment(
         }
     }
 
+    private var pendingCameraOutputUri: android.net.Uri? = null
+
+    private fun launchCameraCapture() {
+        val ctx = context ?: return
+        try {
+            val cacheDir = java.io.File(ctx.cacheDir, "ai_camera").apply { mkdirs() }
+            val photoFile = java.io.File.createTempFile("camera_", ".jpg", cacheDir)
+            val authority = "${ctx.applicationContext.packageName}.fileprovider"
+            val uri = try {
+                androidx.core.content.FileProvider.getUriForFile(ctx, authority, photoFile)
+            } catch (_: Throwable) {
+                // Fallback to a content:// URI via MediaStore — works on most devices
+                // even when the FileProvider authority isn't declared in the manifest.
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, photoFile.name)
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                }
+                ctx.contentResolver.insert(
+                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    values,
+                ) ?: return
+            }
+            pendingCameraOutputUri = uri
+            val intent = android.content.Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            cameraCaptureLauncher.launch(intent)
+        } catch (_: android.content.ActivityNotFoundException) {
+            showSnackbar("No camera app available.")
+        } catch (e: Exception) {
+            android.util.Log.e("ChatFragment", "Camera launch failed", e)
+            showSnackbar("Could not open camera: ${e.message}")
+        }
+    }
+
     private val imagePickerLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode != android.app.Activity.RESULT_OK) return@registerForActivityResult
-        val uri = result.data?.data ?: return@registerForActivityResult
-        val ctx = context ?: return@registerForActivityResult
+        val data = result.data ?: return@registerForActivityResult
+        // Multi-select on Android 4.4+ via clipData; single-select via .data
+        val uris: List<android.net.Uri> = data.clipData?.let { clip ->
+            (0 until clip.itemCount).map { clip.getItemAt(it).uri }
+        } ?: listOfNotNull(data.data)
+        encodeAndAddImages(uris)
+    }
+
+    private val cameraCaptureLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != android.app.Activity.RESULT_OK) return@registerForActivityResult
+        val uri = pendingCameraOutputUri ?: return@registerForActivityResult
+        pendingCameraOutputUri = null
+        encodeAndAddImages(listOf(uri))
+    }
+
+    private fun encodeAndAddImages(uris: List<android.net.Uri>) {
+        val ctx = context ?: return
+        if (uris.isEmpty()) return
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val dataUrl = com.tom.rv2ide.artificial.multimodal.ImageAttachment
-                .encodeFromUri(ctx.contentResolver, uri)
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                if (dataUrl == null) {
-                    showSnackbar("Could not read image. Try a different file.")
-                    return@withContext
+            val Attach = com.tom.rv2ide.artificial.multimodal.ImageAttachment
+            val accepted = mutableListOf<String>()
+            val skipped = mutableListOf<String>()
+            for (uri in uris) {
+                if (Attach.isFull()) {
+                    skipped.add("max ${Attach.maxImages()} reached")
+                    break
                 }
-                val sizeKb = dataUrl.length / 1024
-                val label = "Image attached • ~${sizeKb}KB (b64)"
-                com.tom.rv2ide.artificial.multimodal.ImageAttachment.set(dataUrl, label)
+                val name = uri.lastPathSegment?.substringAfterLast('/').orEmpty().take(24)
+                val encoded = Attach.encodeFromUri(ctx.contentResolver, uri)
+                if (encoded == null) {
+                    skipped.add(name.ifBlank { "image" })
+                    continue
+                }
+                val kb = encoded.sizeBytes / 1024
+                val label = if (name.isNotBlank()) "$name • ${kb}KB" else "Image • ${kb}KB"
+                Attach.add(
+                    com.tom.rv2ide.artificial.multimodal.ImageAttachment.Item(
+                        encoded.dataUrl, label, encoded.thumbnail,
+                    ),
+                )
+                accepted.add(label)
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 refreshImageChip()
-                showSnackbar("Image attached. It'll be sent with your next message.")
+                val msg = buildString {
+                    if (accepted.isNotEmpty()) {
+                        append("Attached ${accepted.size} image")
+                        if (accepted.size > 1) append('s')
+                    }
+                    if (skipped.isNotEmpty()) {
+                        if (isNotEmpty()) append(" · ")
+                        append("skipped ${skipped.size}")
+                    }
+                    if (isEmpty()) append("Could not read image.")
+                }
+                showSnackbar(msg)
             }
         }
     }
 
     /**
-     * Reflect the pending image attachment on the small chip below the input
-     * box. Tapping the chip clears the attachment.
+     * Render the pending image attachments as a horizontal strip of thumbnail
+     * chips above the prompt input. Tapping a chip removes that one image; a
+     * trailing "Clear all" chip wipes the whole list.
      */
     private fun refreshImageChip() {
         val v = view ?: return
-        val chip = v.findViewById<MaterialTextView>(R.id.imageAttachmentChip) ?: return
-        val pending = com.tom.rv2ide.artificial.multimodal.ImageAttachment.pendingLabel
-        if (pending == null) {
-            chip.visibility = View.GONE
-        } else {
-            chip.visibility = View.VISIBLE
-            chip.text = "🖼  $pending  ✕ tap to remove"
-            chip.setOnClickListener {
-                com.tom.rv2ide.artificial.multimodal.ImageAttachment.clear()
-                refreshImageChip()
-                showSnackbar("Image attachment removed")
+        val container = v.findViewById<LinearLayout>(R.id.imageAttachmentStrip)
+        val chip = v.findViewById<MaterialTextView>(R.id.imageAttachmentChip)
+        val items = com.tom.rv2ide.artificial.multimodal.ImageAttachment.all()
+        if (container == null) {
+            // Older layout — fall back to the single-line text chip.
+            chip ?: return
+            if (items.isEmpty()) {
+                chip.visibility = View.GONE
+            } else {
+                chip.visibility = View.VISIBLE
+                chip.text = "🖼  ${items.size} image(s) attached  ✕ tap to clear"
+                chip.setOnClickListener {
+                    com.tom.rv2ide.artificial.multimodal.ImageAttachment.clear()
+                    refreshImageChip()
+                    showSnackbar("Image attachments cleared")
+                }
             }
+            return
+        }
+        container.removeAllViews()
+        if (items.isEmpty()) {
+            container.visibility = View.GONE
+            chip?.visibility = View.GONE
+            return
+        }
+        container.visibility = View.VISIBLE
+        chip?.visibility = View.GONE
+        val ctx = container.context
+        val px = (ctx.resources.displayMetrics.density * 56).toInt()
+        items.forEachIndexed { idx, item ->
+            val frame = android.widget.FrameLayout(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(px, px).apply {
+                    rightMargin = (ctx.resources.displayMetrics.density * 6).toInt()
+                }
+            }
+            val thumb = android.widget.ImageView(ctx).apply {
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                layoutParams = android.widget.FrameLayout.LayoutParams(px, px)
+                if (item.thumbnail != null) setImageBitmap(item.thumbnail)
+                else setImageResource(android.R.drawable.ic_menu_gallery)
+                contentDescription = item.label
+            }
+            val remove = MaterialTextView(ctx).apply {
+                text = "×"
+                textSize = 14f
+                setPadding(8, 0, 8, 0)
+                setBackgroundColor(0x99000000.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { gravity = android.view.Gravity.TOP or android.view.Gravity.END }
+                setOnClickListener {
+                    com.tom.rv2ide.artificial.multimodal.ImageAttachment.removeAt(idx)
+                    refreshImageChip()
+                }
+            }
+            frame.addView(thumb)
+            frame.addView(remove)
+            frame.setOnClickListener {
+                showSnackbar(item.label)
+            }
+            container.addView(frame)
+        }
+        // Trailing clear-all chip
+        if (items.size > 1) {
+            val clearAll = MaterialTextView(ctx).apply {
+                text = "Clear all"
+                setPadding(16, 8, 16, 8)
+                setBackgroundColor(0x33FF4444)
+                setTextColor(0xFFFF4444.toInt())
+                setOnClickListener {
+                    com.tom.rv2ide.artificial.multimodal.ImageAttachment.clear()
+                    refreshImageChip()
+                    showSnackbar("Image attachments cleared")
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    px,
+                ).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            }
+            container.addView(clearAll)
         }
     }
 

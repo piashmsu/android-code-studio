@@ -164,6 +164,49 @@ class AIPreferencesFragment(
                 else "Cross-provider fallback disabled — will stay on the active provider"
             )
         }
+
+        wireDailyCostCap()
+    }
+
+    private fun wireDailyCostCap() {
+        val ctx = context ?: return
+        val limitInput = view?.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.dailyCostLimitInput)
+            ?: return
+        val statusView = view?.findViewById<MaterialTextView>(R.id.dailyCostStatus)
+
+        fun refreshStatus() {
+            val today = com.tom.rv2ide.artificial.usage.DailyCostGuard.spentTodayUsd(ctx)
+            val limit = com.tom.rv2ide.artificial.usage.DailyCostGuard.limitUsd(ctx)
+            val limitText = if (limit > 0.0)
+                "Cap: ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(limit)}"
+            else "Cap: unlimited (0)"
+            statusView?.text = "$limitText  •  spent today: " +
+                com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(today)
+        }
+
+        val current = com.tom.rv2ide.artificial.usage.DailyCostGuard.limitUsd(ctx)
+        if (current > 0.0) limitInput.setText(String.format(java.util.Locale.US, "%.2f", current))
+        refreshStatus()
+
+        limitInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                val v = limitInput.text?.toString()?.trim().orEmpty().toDoubleOrNull() ?: 0.0
+                com.tom.rv2ide.artificial.usage.DailyCostGuard.setLimitUsd(ctx, v)
+                refreshStatus()
+                showSnackbar(
+                    if (v > 0.0) "Daily cap set to ${com.tom.rv2ide.artificial.usage.CostEstimator.fmtUsd(v)}"
+                    else "Daily cap removed (unlimited)"
+                )
+                true
+            } else false
+        }
+        limitInput.setOnFocusChangeListener { _, focused ->
+            if (!focused) {
+                val v = limitInput.text?.toString()?.trim().orEmpty().toDoubleOrNull() ?: 0.0
+                com.tom.rv2ide.artificial.usage.DailyCostGuard.setLimitUsd(ctx, v)
+                refreshStatus()
+            }
+        }
     }
 
     private fun setupOpenAICompat() {

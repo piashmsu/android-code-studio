@@ -23,57 +23,92 @@ import com.tom.rv2ide.preferences.internal.prefManager
 */
 
 object ApiKey {
-    
+
+    // Resolve the global Application context lazily so tests / non-app callers
+    // don't crash. Returns null if the IDEApplication singleton hasn't been
+    // initialised yet, in which case we fall back to plain SharedPreferences.
+    private fun appContext(): android.content.Context? = try {
+        val cls = Class.forName("com.tom.rv2ide.app.IDEApplication")
+        cls.getField("instance").get(null) as android.content.Context
+    } catch (_: Throwable) { null }
+
+    private fun readSecret(legacyKey: String, vaultName: String = legacyKey): String {
+        val ctx = appContext()
+        return if (ctx != null) EncryptedKeyVault.getOrMigrate(ctx, vaultName, legacyKey)
+        else prefManager.getString(legacyKey, "")
+    }
+
+    private fun writeSecret(legacyKey: String, value: String, vaultName: String = legacyKey) {
+        val ctx = appContext()
+        if (ctx != null) {
+            EncryptedKeyVault.put(ctx, vaultName, value)
+            // Belt-and-braces: never leave a copy of the secret in plain prefs.
+            prefManager.putString(legacyKey, "")
+        } else {
+            prefManager.putString(legacyKey, value)
+        }
+    }
+
     // Check if AI Agent is enabled
     fun isAIAgentEnabled(): Boolean {
         return prefManager.getBoolean("ai_agent_enabled", false)
     }
-    
+
     // Gemini API Key
     fun getGeminiApiKey(): String {
-        return prefManager.getString("ai_agent_gemini_api_key", "")
+        return readSecret("ai_agent_gemini_api_key")
     }
-    
+
+    fun setGeminiApiKey(key: String) = writeSecret("ai_agent_gemini_api_key", key)
+
     fun hasGeminiKey(): Boolean {
         val key = getGeminiApiKey()
         return key.isNotBlank() && key.length > 20
     }
-    
+
     // OpenAI API Key
     fun getOpenAIApiKey(): String {
-        return prefManager.getString("ai_agent_openai_api_key", "")
+        return readSecret("ai_agent_openai_api_key")
     }
-    
+
+    fun setOpenAIApiKey(key: String) = writeSecret("ai_agent_openai_api_key", key)
+
     fun hasOpenAIKey(): Boolean {
         val key = getOpenAIApiKey()
         return key.isNotBlank() && key.length > 20
     }
-    
+
     // Deepseek API Key
     fun getDeepseekApiKey(): String {
-        return prefManager.getString("ai_agent_deepseek_api_key", "")
+        return readSecret("ai_agent_deepseek_api_key")
     }
-    
+
+    fun setDeepseekApiKey(key: String) = writeSecret("ai_agent_deepseek_api_key", key)
+
     fun hasDeepseekKey(): Boolean {
         val key = getDeepseekApiKey()
         return key.isNotBlank() && key.length > 20
     }
-    
+
     // Anthropic API Key
     fun getAnthropicApiKey(): String {
-        return prefManager.getString("ai_agent_anthropic_api_key", "")
+        return readSecret("ai_agent_anthropic_api_key")
     }
-    
+
+    fun setAnthropicApiKey(key: String) = writeSecret("ai_agent_anthropic_api_key", key)
+
     fun hasAnthropicKey(): Boolean {
         val key = getAnthropicApiKey()
         return key.isNotBlank() && key.length > 20
     }
-    
+
     // Grok API Key
     fun getGrokApiKey(): String {
-        return prefManager.getString("ai_agent_grok_api_key", "")
+        return readSecret("ai_agent_grok_api_key")
     }
-    
+
+    fun setGrokApiKey(key: String) = writeSecret("ai_agent_grok_api_key", key)
+
     fun hasGrokKey(): Boolean {
         val key = getGrokApiKey()
         return key.isNotBlank() && key.length > 20
@@ -81,8 +116,10 @@ object ApiKey {
 
     // OpenRouter API Key (unified gateway for many models)
     fun getOpenRouterApiKey(): String {
-        return prefManager.getString("ai_agent_openrouter_api_key", "")
+        return readSecret("ai_agent_openrouter_api_key")
     }
+
+    fun setOpenRouterApiKey(key: String) = writeSecret("ai_agent_openrouter_api_key", key)
 
     fun hasOpenRouterKey(): Boolean {
         val key = getOpenRouterApiKey()
@@ -102,11 +139,11 @@ object ApiKey {
     // service that speaks the OpenAI /v1/chat/completions schema (Ollama, Together,
     // Groq, DeepInfra, Mistral La Plateforme, self-hosted, ...).
     fun getOpenAICompatApiKey(): String {
-        return prefManager.getString("ai_agent_openaicompat_api_key", "")
+        return readSecret("ai_agent_openaicompat_api_key")
     }
 
     fun setOpenAICompatApiKey(key: String) {
-        prefManager.putString("ai_agent_openaicompat_api_key", key)
+        writeSecret("ai_agent_openaicompat_api_key", key)
     }
 
     fun hasOpenAICompatKey(): Boolean {

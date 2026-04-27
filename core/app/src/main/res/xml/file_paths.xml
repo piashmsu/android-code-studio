@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <external-files-path name="external_files" path="." />
+    <!-- Cache dir is used by the Chat-tab camera capture flow to receive a
+         fresh JPEG from the system camera app. -->
+    <cache-path name="ai_cache" path="ai_camera/" />
+    <cache-path name="cache_root" path="." />
+    <files-path name="files" path="." />
 </paths>

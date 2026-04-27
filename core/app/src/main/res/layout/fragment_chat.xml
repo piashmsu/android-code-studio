@@ -66,6 +66,21 @@
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/imageAttachmentStrip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:visibility="gone" />
+
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
                 android:scrollbars="none">
 
@@ -181,6 +196,21 @@
                     app:cornerRadius="20dp"
                     style="@style/Widget.Material3.Button.IconButton" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/debugCrashBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:contentDescription="Debug last crash with AI"
+                    android:minWidth="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@android:drawable/stat_notify_error"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:cornerRadius="20dp"
+                    style="@style/Widget.Material3.Button.IconButton" />
+
                 <View
                     android:layout_width="0dp"
                     android:layout_height="0dp"
@@ -280,6 +310,19 @@
                         android:textIsSelectable="true"
                         android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurface" />
+
+                    <!-- Container that renders the AI reply as a sequence of
+                         text segments + code-block cards (with per-block Copy
+                         button + language label). Only used when the reply
+                         contains fenced code blocks; otherwise statusText
+                         keeps showing the rendered markdown as before. -->
+                    <LinearLayout
+                        android:id="@+id/replySegments"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/fileModificationList"
