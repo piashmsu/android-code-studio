@@ -81,6 +81,21 @@
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/fileAttachmentStrip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:visibility="gone" />
+
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
                 android:scrollbars="none">
 
@@ -205,6 +220,21 @@
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
                     app:icon="@android:drawable/ic_menu_gallery"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:cornerRadius="20dp"
+                    style="@style/Widget.Material3.Button.IconButton" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/fileAttachBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:contentDescription="Attach file or zip"
+                    android:minWidth="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@android:drawable/ic_menu_upload"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:cornerRadius="20dp"

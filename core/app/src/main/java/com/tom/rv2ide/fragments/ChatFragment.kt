@@ -188,12 +188,16 @@ class ChatFragment(
             
             codeCompletionManager.clearSuggestion()
             aiRequestHandler.execute(userRequest)
-            // The attachment is consumed by the agent on the very next call;
-            // clear our chip so the user knows the image has been sent and
-            // won't be re-attached to the next, unrelated message.
+            // Attachments are consumed by the agent on the very next call;
+            // clear our chips so they aren't accidentally re-attached to
+            // the next, unrelated message.
             if (com.tom.rv2ide.artificial.multimodal.ImageAttachment.hasPending()) {
                 com.tom.rv2ide.artificial.multimodal.ImageAttachment.clear()
                 refreshImageChip()
+            }
+            if (com.tom.rv2ide.artificial.multimodal.FileAttachment.hasPending()) {
+                com.tom.rv2ide.artificial.multimodal.FileAttachment.clear()
+                refreshFileChip()
             }
         }
     
@@ -213,12 +217,119 @@ class ChatFragment(
             offerImageSourceChoice()
         }
 
+        requireView().findViewById<MaterialButton>(R.id.fileAttachBtn)?.setOnClickListener {
+            launchFilePicker()
+        }
+
         requireView().findViewById<MaterialButton>(R.id.debugCrashBtn)?.setOnClickListener {
             launchCrashDebug()
         }
 
         wireTemplates()
         refreshImageChip()
+        refreshFileChip()
+    }
+
+    /**
+     * Launches the system Storage Access Framework picker for any file type.
+     * Picked files (text/code/json/xml/yaml/md/log/zip/etc) are read and
+     * inlined into the next AI request via [FileAttachment]. Multi-select is
+     * supported on Android 4.3+.
+     */
+    private fun launchFilePicker() {
+        if (com.tom.rv2ide.artificial.multimodal.FileAttachment.isFull()) {
+            showSnackbar("Maximum files attached (${com.tom.rv2ide.artificial.multimodal.FileAttachment.maxFiles()}). Remove one first.")
+            return
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        try {
+            filePickerLauncher.launch(intent)
+        } catch (_: android.content.ActivityNotFoundException) {
+            showSnackbar("No file picker app available.")
+        }
+    }
+
+    private val filePickerLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != android.app.Activity.RESULT_OK) return@registerForActivityResult
+        val data = result.data ?: return@registerForActivityResult
+        val uris: List<android.net.Uri> = data.clipData?.let { clip ->
+            (0 until clip.itemCount).map { clip.getItemAt(it).uri }
+        } ?: data.data?.let { listOf(it) } ?: emptyList()
+        if (uris.isEmpty()) return@registerForActivityResult
+
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val ctx = context ?: return@launch
+            val Attach = com.tom.rv2ide.artificial.multimodal.FileAttachment
+            val accepted = mutableListOf<String>()
+            val skipped = mutableListOf<String>()
+            for (uri in uris) {
+                if (Attach.isFull()) {
+                    skipped += "(cap reached)"
+                    break
+                }
+                val item = Attach.loadFromUri(ctx.contentResolver, uri)
+                if (item != null && Attach.add(item)) {
+                    accepted += item.displayName
+                } else {
+                    skipped += uri.lastPathSegment ?: "(file)"
+                }
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                refreshFileChip()
+                if (accepted.isNotEmpty()) showSnackbar("Attached: ${accepted.joinToString(", ")}")
+                if (skipped.isNotEmpty()) showSnackbar("Skipped (binary/oversized): ${skipped.joinToString(", ")}")
+            }
+        }
+    }
+
+    /**
+     * Render attached files as a horizontal strip of dismissible chips below
+     * the prompt — same pattern as [refreshImageChip]. Each chip shows the
+     * filename + size + an × to remove. Tap any chip to remove that one
+     * attachment; long-press to clear all.
+     */
+    private fun refreshFileChip() {
+        val v = view ?: return
+        val container = v.findViewById<LinearLayout>(R.id.fileAttachmentStrip) ?: return
+        val items = com.tom.rv2ide.artificial.multimodal.FileAttachment.all()
+        container.removeAllViews()
+        if (items.isEmpty()) {
+            container.visibility = View.GONE
+            return
+        }
+        container.visibility = View.VISIBLE
+        val ctx = container.context
+        items.forEachIndexed { idx, item ->
+            val chip = com.google.android.material.chip.Chip(ctx).apply {
+                text = if (item.isZip) "📦 ${item.displayName}" else "📄 ${item.displayName}"
+                isCloseIconVisible = true
+                isCheckable = false
+                isClickable = true
+                setOnCloseIconClickListener {
+                    com.tom.rv2ide.artificial.multimodal.FileAttachment.removeAt(idx)
+                    refreshFileChip()
+                }
+                setOnLongClickListener {
+                    com.tom.rv2ide.artificial.multimodal.FileAttachment.clear()
+                    refreshFileChip()
+                    showSnackbar("All file attachments cleared")
+                    true
+                }
+            }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                marginEnd = (6 * ctx.resources.displayMetrics.density).toInt()
+            }
+            container.addView(chip, lp)
+        }
     }
 
     /**

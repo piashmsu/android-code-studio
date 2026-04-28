@@ -100,7 +100,26 @@ class AIRequestHandler(
                     }
                 }
 
-                executeAIRequest(expanded.expandedPrompt)
+                // Inline any user-attached files / ZIPs so even text-only
+                // models can read them. Image attachments are still handled
+                // by the multimodal layer in OpenAI-compat / OpenRouter.
+                val attached = com.tom.rv2ide.artificial.multimodal.FileAttachment.renderForPrompt()
+                val finalPrompt = if (attached.isNotEmpty()) {
+                    attached + "\n" + expanded.expandedPrompt
+                } else {
+                    expanded.expandedPrompt
+                }
+                if (com.tom.rv2ide.artificial.multimodal.FileAttachment.hasPending()) {
+                    val names = com.tom.rv2ide.artificial.multimodal.FileAttachment.all()
+                        .joinToString(", ") { it.displayName }
+                    withContext(Dispatchers.Main) {
+                        val existing = statusText.text?.toString().orEmpty()
+                        val line = "Files attached: $names"
+                        statusText.text = if (existing.isBlank()) line else "$existing\n$line"
+                    }
+                }
+
+                executeAIRequest(finalPrompt)
 
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
