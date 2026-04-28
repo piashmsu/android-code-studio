@@ -1,12 +1,19 @@
 /*
- * Holds the user's pending image attachment for the next AI request. The
- * Chat tab populates this on image-picker pick; OpenAI-compat / OpenRouter
- * agents read it and emit a multimodal user message
- *   { role: "user", content: [ { type:"text", text:"..." }, { type:"image_url", image_url:{url:"data:..."} } ] }
+ * Holds the user's pending image attachments for the next AI request. The
+ * Chat tab populates this on image-picker pick and/or camera capture; the
+ * OpenAI-compat / OpenRouter agents read it and emit a multimodal user
+ * message
+ *   { role: "user", content: [
+ *      { type:"text", text:"..." },
+ *      { type:"image_url", image_url:{url:"data:..."} },
+ *      { type:"image_url", image_url:{url:"data:..."} },
+ *      ...
+ *   ] }
  * which every modern vision-capable model on those providers understands.
  *
- * The attachment is cleared automatically after the next request is sent so
- * one image doesn't leak into the next unrelated prompt.
+ * Multiple images can be attached at once. The list is cleared automatically
+ * after the next request so a leftover image doesn't leak into the next,
+ * unrelated prompt.
  */
 package com.tom.rv2ide.artificial.multimodal
 
@@ -22,27 +29,64 @@ object ImageAttachment {
     /** Maximum bytes of compressed image we'll send. Keeps prompts under ~6MB. */
     private const val MAX_BYTES = 4 * 1024 * 1024
 
-    /** Pending image as a `data:image/...;base64,...` URL. Null if none. */
-    @Volatile
-    var pendingDataUrl: String? = null
-        private set
+    /** Hard cap on number of images per message — vision models bill per image. */
+    private const val MAX_IMAGES = 6
 
-    /** Display label for the chip ("photo.jpg • 320 KB"). */
-    @Volatile
-    var pendingLabel: String? = null
-        private set
+    data class Item(
+        val dataUrl: String,
+        val label: String,
+        val thumbnail: Bitmap? = null,
+    )
+
+    private val items = mutableListOf<Item>()
+
+    @Synchronized
+    fun all(): List<Item> = items.toList()
+
+    @Synchronized
+    fun count(): Int = items.size
+
+    @Synchronized
+    fun hasPending(): Boolean = items.isNotEmpty()
+
+    @Synchronized
+    fun add(item: Item): Boolean {
+        if (items.size >= MAX_IMAGES) return false
+        items.add(item)
+        return true
+    }
+
+    @Synchronized
+    fun removeAt(index: Int) {
+        if (index in items.indices) items.removeAt(index)
+    }
+
+    @Synchronized
+    fun clear() {
+        items.clear()
+    }
+
+    /** Convenience for callers that just want to know whether the cap was hit. */
+    @Synchronized
+    fun isFull(): Boolean = items.size >= MAX_IMAGES
+
+    @Synchronized
+    fun maxImages(): Int = MAX_IMAGES
+
+    // --- Legacy single-image API for backwards compat with older call sites. ---
+
+    /** First pending image as a `data:image/...;base64,...` URL, or null. */
+    val pendingDataUrl: String?
+        @Synchronized get() = items.firstOrNull()?.dataUrl
+
+    /** First pending image's display label, or null. */
+    val pendingLabel: String?
+        @Synchronized get() = items.firstOrNull()?.label
 
     fun set(dataUrl: String, label: String) {
-        pendingDataUrl = dataUrl
-        pendingLabel = label
+        clear()
+        add(Item(dataUrl, label))
     }
-
-    fun clear() {
-        pendingDataUrl = null
-        pendingLabel = null
-    }
-
-    fun hasPending(): Boolean = pendingDataUrl != null
 
     /**
      * Read the user-picked image from the given URI, downscale to at most
@@ -54,9 +98,20 @@ object ImageAttachment {
         resolver: ContentResolver,
         uri: Uri,
         maxEdge: Int = 1600,
-    ): String? {
+    ): EncodedImage? {
         return try {
             val bytes = resolver.openInputStream(uri).use { it?.readBytes() } ?: return null
+            encodeFromBytes(bytes, maxEdge)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Same as [encodeFromUri] but for in-memory bytes (e.g. camera capture).
+     */
+    fun encodeFromBytes(bytes: ByteArray, maxEdge: Int = 1600): EncodedImage? {
+        return try {
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
             val sample = computeInSampleSize(opts.outWidth, opts.outHeight, maxEdge)
@@ -66,7 +121,6 @@ object ImageAttachment {
             val out = ByteArrayOutputStream()
             scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
             var jpeg = out.toByteArray()
-            // Last-resort guardrail: if it's still > MAX_BYTES, recompress harder.
             var quality = 75
             while (jpeg.size > MAX_BYTES && quality >= 35) {
                 out.reset()
@@ -74,10 +128,32 @@ object ImageAttachment {
                 jpeg = out.toByteArray()
                 quality -= 10
             }
-            "data:image/jpeg;base64,${Base64.encodeToString(jpeg, Base64.NO_WRAP)}"
+            val dataUrl = "data:image/jpeg;base64,${Base64.encodeToString(jpeg, Base64.NO_WRAP)}"
+            EncodedImage(
+                dataUrl = dataUrl,
+                sizeBytes = jpeg.size,
+                thumbnail = makeThumbnail(scaled),
+            )
         } catch (_: Throwable) {
             null
         }
+    }
+
+    data class EncodedImage(
+        val dataUrl: String,
+        val sizeBytes: Int,
+        val thumbnail: Bitmap?,
+    )
+
+    private fun makeThumbnail(src: Bitmap, edge: Int = 96): Bitmap? {
+        return try {
+            val w = src.width; val h = src.height
+            if (w <= 0 || h <= 0) return null
+            val scale = edge.toFloat() / maxOf(w, h)
+            val nw = (w * scale).toInt().coerceAtLeast(1)
+            val nh = (h * scale).toInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(src, nw, nh, true)
+        } catch (_: Throwable) { null }
     }
 
     private fun computeInSampleSize(srcW: Int, srcH: Int, maxEdge: Int): Int {

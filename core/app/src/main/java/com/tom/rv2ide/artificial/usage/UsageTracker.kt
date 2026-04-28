@@ -33,6 +33,15 @@ object UsageTracker {
     totalPrompt.addAndGet(promptTokens.toLong())
     totalCompletion.addAndGet(completionTokens.toLong())
     requestCount.incrementAndGet()
+    // Best-effort: feed the daily cost guard if the IDEApplication singleton
+    // is available. Wrapped in a try/catch so unit tests / non-app contexts
+    // that don't have the singleton don't crash here.
+    try {
+      val cls = Class.forName("com.tom.rv2ide.app.IDEApplication")
+      val instance = cls.getField("instance").get(null) as android.content.Context
+      val cost = CostEstimator.costFor(promptTokens, completionTokens, model)
+      DailyCostGuard.recordCost(instance, cost)
+    } catch (_: Throwable) { /* ignore */ }
   }
 
   fun totalTokens(): Long = totalPrompt.get() + totalCompletion.get()

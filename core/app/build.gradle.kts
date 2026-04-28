@@ -42,11 +42,14 @@ buildscript {
   }
 }
 
-tasks.configureEach {
-    if (name.contains("desugar", ignoreCase = true)) {
-        enabled = false
-    }
-}
+// NOTE: an earlier upstream attempt to short-circuit AGP's desugar tasks
+// (`tasks.configureEach { if (name.contains("desugar")) enabled = false }`)
+// removed the output directory that downstream `mergeExt<Variant>Dex` tasks
+// require, breaking clean builds with
+//   "property 'fileDependencyDexDir' specifies directory ... which doesn't
+//    exist".
+// We let AGP's desugar pipeline run normally; it is fast (no external file
+// dependencies in this app) and produces the expected (empty) output dir.
 
 configurations.all {
   resolutionStrategy {

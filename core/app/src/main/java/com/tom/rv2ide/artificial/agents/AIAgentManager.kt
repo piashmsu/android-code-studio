@@ -204,6 +204,21 @@ class AIAgentManager(private val context: Context) {
         var providerSwitched = false
         var lastError: Throwable? = null
 
+        // Pre-flight: refuse to spend if the user has set a daily cap and
+        // already hit it. Cap is opt-in (default 0 = unlimited).
+        try {
+            val block = com.tom.rv2ide.artificial.usage.DailyCostGuard
+                .preflightBlockReason(context)
+            if (block != null) {
+                callback.onError(
+                    "💰 DAILY COST CAP REACHED\n\n$block\n\n" +
+                    "Tip: free models (slug ending in `:free`) and local Ollama / vLLM " +
+                    "endpoints don't count against this cap."
+                )
+                return
+            }
+        } catch (_: Throwable) { /* not fatal */ }
+
         currentAgent?.resetAttemptCount()
         callback.onProcessing("Analyzing your request...")
 
@@ -223,22 +238,39 @@ class AIAgentManager(private val context: Context) {
                     sp.getBoolean("ai_agent_streaming_enabled", true)
                 }
 
-                val result = if (streamingEnabled && currentAgent?.supportsStreaming() == true) {
-                    currentAgent?.generateCodeStreaming(
-                        prompt = userRequest,
-                        context = null,
-                        language = "kotlin",
-                        projectStructure = null,
-                        onChunk = { delta, full -> callback.onStreamChunk(delta, full) },
-                    ) ?: Result.failure(Exception("No agent initialized"))
-                } else {
-                    currentAgent?.generateCode(
-                        prompt = userRequest,
-                        context = null,
-                        language = "kotlin",
-                        projectStructure = null
-                    ) ?: Result.failure(Exception("No agent initialized"))
+                // Hard wall-clock cap so a hung provider can never freeze the
+                // UI in "Analyzing your request…" forever. Free / community
+                // models routinely take 60–120s; 3 min is generous.
+                val perRequestTimeoutMs = run {
+                    val sp = android.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                    val mins = sp.getString("ai_agent_request_timeout_minutes", "3")
+                        ?.toIntOrNull() ?: 3
+                    (mins.coerceIn(1, 15)) * 60_000L
                 }
+
+                val rawResult: Result<String>? = kotlinx.coroutines.withTimeoutOrNull(perRequestTimeoutMs) {
+                    if (streamingEnabled && currentAgent?.supportsStreaming() == true) {
+                        currentAgent?.generateCodeStreaming(
+                            prompt = userRequest,
+                            context = null,
+                            language = "kotlin",
+                            projectStructure = null,
+                            onChunk = { delta, full -> callback.onStreamChunk(delta, full) },
+                        ) ?: Result.failure(Exception("No agent initialized"))
+                    } else {
+                        currentAgent?.generateCode(
+                            prompt = userRequest,
+                            context = null,
+                            language = "kotlin",
+                            projectStructure = null
+                        ) ?: Result.failure(Exception("No agent initialized"))
+                    }
+                }
+                val result: Result<String> = rawResult ?: Result.failure(
+                    java.util.concurrent.TimeoutException(
+                        "Provider didn't respond within ${perRequestTimeoutMs / 60_000} minute(s). The model may be slow or stalled — trying another model…"
+                    )
+                )
 
                 result.fold(
                     onSuccess = { response ->

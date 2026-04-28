@@ -63,8 +63,8 @@ class Grok : AIAgent {
               }
               
               override fun getApiKey(): String? {
-                  val prefManager = com.tom.rv2ide.preferences.internal.prefManager
-                  return prefManager.getString("ai_agent_grok_api_key", "")?.takeIf { it.isNotBlank() }
+                  return com.tom.rv2ide.artificial.secrets.ApiKey
+                      .getGrokApiKey().takeIf { it.isNotBlank() }
               }
           })
       }

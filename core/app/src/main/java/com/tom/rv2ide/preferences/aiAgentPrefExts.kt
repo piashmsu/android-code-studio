@@ -142,7 +142,7 @@ private class GrokApiKey(
     val context = preference.context
 
     val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_grok_api_key", ""))
+    editText.setText(com.tom.rv2ide.artificial.secrets.ApiKey.getGrokApiKey())
     editText.hint = "Enter your xAI Grok API key"
 
     val dialog =
@@ -153,7 +153,7 @@ private class GrokApiKey(
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
               val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_grok_api_key", apiKey)
+              com.tom.rv2ide.artificial.secrets.ApiKey.setGrokApiKey(apiKey)
               preference.summary = getSummaryText()
             }
             .setNegativeButton("Cancel", null)
@@ -168,7 +168,7 @@ private class GrokApiKey(
   }
 
   private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
+    val apiKey = com.tom.rv2ide.artificial.secrets.ApiKey.getGrokApiKey()
     return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
   }
 }
@@ -196,7 +196,7 @@ private class GeminiApiKey(
     val context = preference.context
 
     val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_gemini_api_key", ""))
+    editText.setText(com.tom.rv2ide.artificial.secrets.ApiKey.getGeminiApiKey())
     editText.hint = "Enter your Google Gemini API key"
 
     val dialog =
@@ -207,7 +207,7 @@ private class GeminiApiKey(
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
               val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_gemini_api_key", apiKey)
+              com.tom.rv2ide.artificial.secrets.ApiKey.setGeminiApiKey(apiKey)
               preference.summary = getSummaryText()
             }
             .setNegativeButton("Cancel", null)
@@ -222,7 +222,7 @@ private class GeminiApiKey(
   }
 
   private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
+    val apiKey = com.tom.rv2ide.artificial.secrets.ApiKey.getGeminiApiKey()
     return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
   }
 }
@@ -250,7 +250,7 @@ private class DeepseekApiKey(
     val context = preference.context
 
     val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_deepseek_api_key", ""))
+    editText.setText(com.tom.rv2ide.artificial.secrets.ApiKey.getDeepseekApiKey())
     editText.hint = "Enter your Deepseek API key"
 
     val dialog =
@@ -261,7 +261,7 @@ private class DeepseekApiKey(
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
               val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_deepseek_api_key", apiKey)
+              com.tom.rv2ide.artificial.secrets.ApiKey.setDeepseekApiKey(apiKey)
               preference.summary = getSummaryText()
             }
             .setNegativeButton("Cancel", null)
@@ -276,7 +276,7 @@ private class DeepseekApiKey(
   }
 
   private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
+    val apiKey = com.tom.rv2ide.artificial.secrets.ApiKey.getDeepseekApiKey()
     return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
   }
 }
@@ -304,7 +304,7 @@ private class OpenAIApiKey(
     val context = preference.context
 
     val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_openai_api_key", ""))
+    editText.setText(com.tom.rv2ide.artificial.secrets.ApiKey.getOpenAIApiKey())
     editText.hint = "Enter your OpenAI API key"
 
     val dialog =
@@ -315,7 +315,7 @@ private class OpenAIApiKey(
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
               val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_openai_api_key", apiKey)
+              com.tom.rv2ide.artificial.secrets.ApiKey.setOpenAIApiKey(apiKey)
               preference.summary = getSummaryText()
             }
             .setNegativeButton("Cancel", null)
@@ -330,7 +330,7 @@ private class OpenAIApiKey(
   }
 
   private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
+    val apiKey = com.tom.rv2ide.artificial.secrets.ApiKey.getOpenAIApiKey()
     return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
   }
 }
@@ -358,7 +358,7 @@ private class AnthropicApiKey(
     val context = preference.context
 
     val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_anthropic_api_key", ""))
+    editText.setText(com.tom.rv2ide.artificial.secrets.ApiKey.getAnthropicApiKey())
     editText.hint = "Enter your Anthropic API key"
 
     val dialog =
@@ -369,7 +369,7 @@ private class AnthropicApiKey(
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
               val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_anthropic_api_key", apiKey)
+              com.tom.rv2ide.artificial.secrets.ApiKey.setAnthropicApiKey(apiKey)
               preference.summary = getSummaryText()
             }
             .setNegativeButton("Cancel", null)
@@ -384,7 +384,7 @@ private class AnthropicApiKey(
   }
 
   private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
+    val apiKey = com.tom.rv2ide.artificial.secrets.ApiKey.getAnthropicApiKey()
     return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
   }
 }
@@ -411,7 +411,7 @@ private class OpenRouterApiKey(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
     val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_openrouter_api_key", ""))
+    editText.setText(com.tom.rv2ide.artificial.secrets.ApiKey.getOpenRouterApiKey())
     editText.hint = "Enter your OpenRouter API key (sk-or-...)"
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
@@ -420,7 +420,7 @@ private class OpenRouterApiKey(
         .setView(editText)
         .setPositiveButton("Save") { _, _ ->
           val apiKey = editText.text.toString().trim()
-          prefManager.putString("ai_agent_openrouter_api_key", apiKey)
+          com.tom.rv2ide.artificial.secrets.ApiKey.setOpenRouterApiKey(apiKey)
           preference.summary = getSummaryText(context)
         }
         .setNegativeButton("Cancel", null)
@@ -433,7 +433,7 @@ private class OpenRouterApiKey(
   }
 
   private fun getSummaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_openrouter_api_key", "")
+    val apiKey = com.tom.rv2ide.artificial.secrets.ApiKey.getOpenRouterApiKey()
     return if (apiKey.isBlank()) {
       context.getString(R.string.ai_agent_openrouter_api_key_summary)
     } else {

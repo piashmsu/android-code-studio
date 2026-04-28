@@ -344,18 +344,19 @@ class OpenRouter : AIAgent {
 
       val messages = JSONArray()
       messages.put(JSONObject().put("role", "system").put("content", writingRules.useThis()))
-      val pendingImage = com.tom.rv2ide.artificial.multimodal.ImageAttachment.pendingDataUrl
-      if (pendingImage != null) {
+      val pendingImages = com.tom.rv2ide.artificial.multimodal.ImageAttachment.all()
+      if (pendingImages.isNotEmpty()) {
         // Multimodal user message — every modern OpenRouter vision model
         // (gpt-4o*, gemini-*, claude-*, llama-3.2-*-vision, qwen-2-vl, etc.)
-        // accepts this exact shape.
-        val parts = JSONArray()
-          .put(JSONObject().put("type", "text").put("text", prompt))
-          .put(
+        // accepts this exact shape. Multiple images are simply repeated parts.
+        val parts = JSONArray().put(JSONObject().put("type", "text").put("text", prompt))
+        for (img in pendingImages) {
+          parts.put(
             JSONObject().put("type", "image_url").put(
-              "image_url", JSONObject().put("url", pendingImage),
+              "image_url", JSONObject().put("url", img.dataUrl),
             ),
           )
+        }
         messages.put(JSONObject().put("role", "user").put("content", parts))
       } else {
         messages.put(JSONObject().put("role", "user").put("content", prompt))

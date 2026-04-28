@@ -67,8 +67,8 @@ class Anthropic : AIAgent {
               }
               
               override fun getApiKey(): String? {
-                  val prefManager = com.tom.rv2ide.preferences.internal.prefManager
-                  return prefManager.getString("ai_agent_anthropic_api_key", "")?.takeIf { it.isNotBlank() }
+                  return com.tom.rv2ide.artificial.secrets.ApiKey
+                      .getAnthropicApiKey().takeIf { it.isNotBlank() }
               }
           })
       }

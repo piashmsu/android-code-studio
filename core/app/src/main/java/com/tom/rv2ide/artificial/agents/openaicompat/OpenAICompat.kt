@@ -232,19 +232,20 @@ class OpenAICompat : AIAgent {
 
       val messages = JSONArray()
       messages.put(JSONObject().put("role", "system").put("content", writingRules.useThis()))
-      val pendingImage = com.tom.rv2ide.artificial.multimodal.ImageAttachment.pendingDataUrl
-      if (pendingImage != null) {
+      val pendingImages = com.tom.rv2ide.artificial.multimodal.ImageAttachment.all()
+      if (pendingImages.isNotEmpty()) {
         // Multimodal user message — works on any OpenAI-compat endpoint that
         // supports vision (OpenAI gpt-4o, Together, Groq llama-3.2 vision,
         // Fireworks, vLLM, Ollama llava etc.). Endpoints that don't support
         // vision will return a clear 400 — much better than silently dropping.
-        val parts = JSONArray()
-          .put(JSONObject().put("type", "text").put("text", prompt))
-          .put(
+        val parts = JSONArray().put(JSONObject().put("type", "text").put("text", prompt))
+        for (img in pendingImages) {
+          parts.put(
             JSONObject().put("type", "image_url").put(
-              "image_url", JSONObject().put("url", pendingImage),
+              "image_url", JSONObject().put("url", img.dataUrl),
             ),
           )
+        }
         messages.put(JSONObject().put("role", "user").put("content", parts))
       } else {
         messages.put(JSONObject().put("role", "user").put("content", prompt))
