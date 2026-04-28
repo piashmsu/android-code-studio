@@ -136,6 +136,20 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
+                <HorizontalScrollView
+                    android:id="@+id/actionRowScroll"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:scrollbars="none"
+                    android:fillViewport="false">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/exportBtn"
                     android:layout_width="wrap_content"
@@ -211,15 +225,15 @@
                     app:cornerRadius="20dp"
                     style="@style/Widget.Material3.Button.IconButton" />
 
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:layout_weight="1" />
+                </LinearLayout>
+
+                </HorizontalScrollView>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/executeBtn"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
                     android:text="Send"
                     app:icon="@drawable/ic_send"
                     app:cornerRadius="20dp" />
